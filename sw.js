@@ -1,5 +1,5 @@
 // ネットにつながっていれば常に最新を取得し、オフライン時だけキャッシュを使う（network-first）
-const CACHE = 'journal-v4';
+const CACHE = 'journal-v5';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

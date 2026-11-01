@@ -408,6 +408,14 @@ function renderMonth() {
       </table>
     </div>
     <p class="gridnote">■できた ◩まぁまぁ（達成率では0.5回）。行をタップするとその日の入力画面を開きます。右へスクロールで数値とハイライト。</p>
+
+    <h2>月次メモ</h2>
+    <div class="memoview card" data-act="editmemo">
+      ${MEMO_FIELDS.some(([k]) => (db.months[m] || {})[k])
+        ? MEMO_FIELDS.filter(([k]) => (db.months[m] || {})[k]).map(([k, label, cls]) => `
+          <div class="mv-item"><div class="mv-k ${cls}">${label}</div><div class="mv-v">${esc(db.months[m][k])}</div></div>`).join('')
+        : '<div class="mv-empty">まだ書かれていません。タップして書く</div>'}
+    </div>
   `;
 }
 
@@ -416,6 +424,7 @@ $view.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (b && b.dataset.act === 'mprev') { state.month = addMonths(state.month, -1); render(); return; }
   if (b && b.dataset.act === 'mnext') { state.month = addMonths(state.month, 1); render(); return; }
+  if (e.target.closest('[data-act="editmemo"]')) { setTab('memo'); return; }
   const tr = e.target.closest('tr[data-date]');
   if (tr && tr.dataset.date <= todayStr()) { state.date = tr.dataset.date; setTab('day'); }
 });

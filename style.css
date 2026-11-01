@@ -281,3 +281,10 @@ table.mg { border-collapse: collapse; font-size: 13px; font-variant-numeric: tab
 .pickfield::after {
   content: '▾'; position: absolute; left: 14px; font-size: 13px; color: var(--muted); pointer-events: none;
 }
+
+/* 月間ページ下の月次メモ（表示のみ・タップで編集へ） */
+.memoview { cursor: pointer; }
+.mv-item + .mv-item { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.mv-k { font-size: 12px; font-weight: 600; color: var(--muted); }
+.mv-v { white-space: pre-wrap; line-height: 1.6; margin-top: 2px; }
+.mv-empty { color: var(--muted); font-size: 14px; }
