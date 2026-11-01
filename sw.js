@@ -1,5 +1,5 @@
 // オフライン用：キャッシュを先に返し、裏で最新を取りに行く（stale-while-revalidate）
-const CACHE = 'journal-v1';
+const CACHE = 'journal-v2';
 const ASSETS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

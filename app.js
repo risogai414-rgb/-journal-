@@ -1,10 +1,11 @@
 /* ジャーナル PWA — フェーズ1
  * データは localStorage の1キーにJSONで保存。
- * 構造（schemaVersion 1）:
+ * 構造（schemaVersion 2）:
  * {
- *   schemaVersion: 1,
+ *   schemaVersion: 2,
  *   settings: { habits: [{ id, name, archived? }] },
- *   days:   { "YYYY-MM-DD": { habits: { [habitId]: true }, satisfaction, weight, kcal, sideHours, highlight } },
+ *   days:   { "YYYY-MM-DD": { habits: { [habitId]: true | 0.5 }, satisfaction, weight, kcal, focusHours, highlight } },
+ *   ※ 習慣は true=できた（黒塗り）, 0.5=まぁまぁ（半分塗り）, なし=未達
  *   months: { "YYYY-MM":    { goal, focus, keep, problem, try } },
  *   meta:   { lastExportAt }
  * }
@@ -12,7 +13,7 @@
 'use strict';
 
 const STORE_KEY = 'journal.data';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const DEFAULT_HABITS = [
   'ジャーナリング', '22〜23時就寝', '5〜6時起き', 'ベッドメイク',
   '歯みがき・白湯', '体重測定', 'プロテイン・サプリ',
@@ -47,7 +48,11 @@ function normalize(d) {
   if (!d || typeof d !== 'object') throw new Error('形式が違います');
   if (!d.settings || !Array.isArray(d.settings.habits)) throw new Error('習慣の設定が見つかりません');
   if (!d.days || typeof d.days !== 'object') throw new Error('日次データが見つかりません');
-  // 将来のマイグレーションはここで schemaVersion を見て行う
+  // v1 → v2: 副業時間(sideHours) を 集中時間(focusHours) に改名
+  for (const day of Object.values(d.days)) {
+    if (day && day.sideHours != null && day.focusHours == null) day.focusHours = day.sideHours;
+    if (day) delete day.sideHours;
+  }
   return {
     schemaVersion: SCHEMA_VERSION,
     settings: { habits: d.settings.habits.filter((h) => h && h.id && typeof h.name === 'string') },
@@ -78,6 +83,12 @@ function save() {
 }
 
 const activeHabits = () => db.settings.habits.filter((h) => !h.archived);
+// 習慣の達成度：1=できた, 0.5=まぁまぁ, 0=未達
+function habitVal(d, id) {
+  const v = d && d.habits ? d.habits[id] : undefined;
+  return v === true || v === 1 ? 1 : v === 0.5 ? 0.5 : 0;
+}
+const stateOf = (v) => (v === 1 ? 'full' : v === 0.5 ? 'half' : 'off');
 
 function getDay(date, create) {
   let d = db.days[date];
@@ -164,10 +175,10 @@ function renderDay() {
     </div>
     ${isToday ? '' : '<button class="backtoday" data-act="today">今日に戻る</button>'}
 
-    <h2>習慣</h2>
+    <h2>習慣<span class="legend">タップで ■できた → ◩まぁまぁ → □未達</span></h2>
     <div class="habits">
       ${activeHabits().map((h) => `
-        <button class="habit" data-habit="${h.id}" aria-pressed="${!!(d.habits && d.habits[h.id])}">
+        <button class="habit" data-habit="${h.id}" data-state="${stateOf(habitVal(d, h.id))}">
           <span class="box"></span><span>${esc(h.name)}</span>
         </button>`).join('')}
     </div>
@@ -194,10 +205,10 @@ function renderDay() {
       <span class="unit">kcal</span>
     </div>
 
-    <h2>副業時間</h2>
+    <h2>集中時間</h2>
     <div class="numrow">
       <button class="step" data-act="s-">−</button>
-      <div class="numfield"><output id="side">${d.sideHours != null ? fmt1(d.sideHours) : '—'}</output><span class="unit">時間</span></div>
+      <div class="numfield"><output id="focus">${d.focusHours != null ? fmt1(d.focusHours) : '—'}</output><span class="unit">時間</span></div>
       <button class="step" data-act="s+">＋</button>
     </div>
 
@@ -215,9 +226,13 @@ $view.addEventListener('click', (e) => {
   if (t.dataset.habit) {
     const d = getDay(date, true);
     const id = t.dataset.habit;
-    if (d.habits[id]) delete d.habits[id]; else d.habits[id] = true;
+    // タップごとに 未達 → できた → まぁまぁ → 未達
+    const cur = habitVal(d, id);
+    if (cur === 0) d.habits[id] = true;
+    else if (cur === 1) d.habits[id] = 0.5;
+    else delete d.habits[id];
     delete d._dummy;
-    t.setAttribute('aria-pressed', String(!!d.habits[id]));
+    t.dataset.state = stateOf(habitVal(d, id));
     cleanupDay(date);
     save();
     return;
@@ -248,13 +263,13 @@ $view.addEventListener('click', (e) => {
       break;
     }
     case 's-': case 's+': {
-      const cur = (getDay(date) || {}).sideHours;
+      const cur = (getDay(date) || {}).focusHours;
       let v = cur == null ? 0 : cur + (t.dataset.act === 's+' ? 0.5 : -0.5);
       if (cur == null && t.dataset.act === 's+') v = 0.5;
       if (cur == null && t.dataset.act === 's-') v = 0;
       v = Math.max(0, Math.min(24, v));
-      setField(date, 'sideHours', v);
-      document.getElementById('side').textContent = fmt1(v);
+      setField(date, 'focusHours', v);
+      document.getElementById('focus').textContent = fmt1(v);
       break;
     }
   }
@@ -303,17 +318,17 @@ function monthStats(m) {
   let elapsed = 0, done = 0;
   const perHabit = Object.fromEntries(habits.map((h) => [h.id, 0]));
   const weights = [];
-  let satSum = 0, satN = 0, sideSum = 0;
+  let satSum = 0, satN = 0, focusSum = 0;
   for (let i = 1; i <= n; i++) {
     const date = `${m}-${pad(i)}`;
     if (date > today) break;
     elapsed++;
     const d = db.days[date];
     if (!d) continue;
-    for (const h of habits) if (d.habits && d.habits[h.id]) { done++; perHabit[h.id]++; }
+    for (const h of habits) { const v = habitVal(d, h.id); done += v; perHabit[h.id] += v; }
     if (d.weight != null) weights.push(d.weight);
     if (d.satisfaction != null) { satSum += d.satisfaction; satN++; }
-    if (d.sideHours != null) sideSum += d.sideHours;
+    if (d.focusHours != null) focusSum += d.focusHours;
   }
   const possible = elapsed * habits.length;
   return {
@@ -321,7 +336,7 @@ function monthStats(m) {
     weightDiff: weights.length >= 2 ? Math.round((weights[weights.length - 1] - weights[0]) * 10) / 10 : null,
     weightFirst: weights[0], weightLast: weights[weights.length - 1],
     satAvg: satN ? Math.round((satSum / satN) * 10) / 10 : null,
-    sideSum, perHabit, elapsed,
+    focusSum, perHabit, elapsed,
   };
 }
 
@@ -341,11 +356,11 @@ function renderMonth() {
     const cls = [wd === 0 ? 'wd-sun' : '', wd === 6 ? 'wd-sat' : '', date > today ? 'future' : '', date === today ? 'today' : ''].join(' ');
     rows += `<tr class="${cls}" data-date="${date}">
       <td class="d">${i}<small>${WD[wd]}</small></td>
-      ${habits.map((h) => `<td class="c ${d.habits && d.habits[h.id] ? 'on' : ''}"></td>`).join('')}
+      ${habits.map((h) => `<td class="c ${stateOf(habitVal(d, h.id))}"></td>`).join('')}
       <td class="n">${d.satisfaction ?? ''}</td>
       <td class="n">${fmt1(d.weight)}</td>
       <td class="n">${d.kcal ?? ''}</td>
-      <td class="n">${d.sideHours != null ? fmt1(d.sideHours) : ''}</td>
+      <td class="n">${d.focusHours != null ? fmt1(d.focusHours) : ''}</td>
       <td class="hl">${esc(d.highlight)}</td>
     </tr>`;
   }
@@ -360,24 +375,24 @@ function renderMonth() {
       <div class="stat"><div class="k">習慣達成率</div><div class="v">${s.rate ?? '—'}<small>${s.rate != null ? '%' : ''}</small></div></div>
       <div class="stat"><div class="k">体重の増減${s.weightDiff != null ? `（${fmt1(s.weightFirst)}→${fmt1(s.weightLast)}）` : ''}</div><div class="v">${s.weightDiff != null ? sign(s.weightDiff) : '—'}<small>${s.weightDiff != null ? 'kg' : ''}</small></div></div>
       <div class="stat"><div class="k">平均満足度</div><div class="v">${s.satAvg ?? '—'}</div></div>
-      <div class="stat"><div class="k">副業時間 合計</div><div class="v">${fmt1(s.sideSum)}<small>時間</small></div></div>
+      <div class="stat"><div class="k">集中時間 合計</div><div class="v">${fmt1(s.focusSum)}<small>時間</small></div></div>
     </div>
     <div class="gridwrap">
       <table class="mg">
         <thead><tr>
           <th class="d"></th>
           ${habits.map((h) => `<th class="hcol">${esc(h.name)}</th>`).join('')}
-          <th>満足</th><th>体重</th><th>kcal</th><th>副業</th><th style="text-align:left">ハイライト</th>
+          <th>満足</th><th>体重</th><th>kcal</th><th>集中</th><th style="text-align:left">ハイライト</th>
         </tr></thead>
         <tbody>${rows}</tbody>
         <tfoot><tr>
           <td class="d">計</td>
-          ${habits.map((h) => `<td>${s.perHabit[h.id]}</td>`).join('')}
+          ${habits.map((h) => `<td>${Math.round(s.perHabit[h.id] * 10) / 10}</td>`).join('')}
           <td colspan="5"></td>
         </tr></tfoot>
       </table>
     </div>
-    <p class="gridnote">行をタップするとその日の入力画面を開きます。右へスクロールで数値とハイライト。</p>
+    <p class="gridnote">■できた ◩まぁまぁ（達成率では0.5回）。行をタップするとその日の入力画面を開きます。右へスクロールで数値とハイライト。</p>
   `;
 }
 
@@ -582,9 +597,9 @@ function insertDummy() {
   const habits = activeHabits();
   const probs = [0.9, 0.55, 0.6, 0.8, 0.85, 0.75, 0.65];
   const highlights = [
-    '朝の散歩が気持ちよかった', '副業の提案資料が完成', '早起きできて読書30分', '家族と夕飯をゆっくり食べた',
+    '朝の散歩が気持ちよかった', '企画書が完成', '早起きできて読書30分', '家族と夕飯をゆっくり食べた',
     'ジムで自己ベスト', '新しいカフェで集中できた', '仕事のレビューで褒められた', '部屋の片付けが終わった',
-    '友人と久しぶりに電話', '副業で初めての納品', '雨だったけど予定通り動けた', '料理を作り置きできた',
+    '友人と久しぶりに電話', '2時間集中して作業できた', '雨だったけど予定通り動けた', '料理を作り置きできた',
   ];
   let w = 68.4, added = 0;
   for (let i = 1; i <= daysInMonth(m); i++) {
@@ -592,13 +607,13 @@ function insertDummy() {
     w = Math.round((w - 0.04 + (Math.random() - 0.5) * 0.6) * 10) / 10;
     if (db.days[date] && !db.days[date]._dummy) continue;
     const hs = {};
-    habits.forEach((h, j) => { if (Math.random() < (probs[j] ?? 0.6)) hs[h.id] = true; });
+    habits.forEach((h, j) => { const r = Math.random(), p = probs[j] ?? 0.6; if (r < p * 0.8) hs[h.id] = true; else if (r < p) hs[h.id] = 0.5; });
     db.days[date] = {
       habits: hs,
       satisfaction: Math.min(10, Math.max(2, Math.round(6 + (Math.random() - 0.4) * 5))),
       weight: w,
       kcal: Math.round((1700 + Math.random() * 700) / 10) * 10,
-      sideHours: Math.round(Math.random() * 6) / 2,
+      focusHours: Math.round(Math.random() * 6) / 2,
       highlight: highlights[Math.floor(Math.random() * highlights.length)],
       _dummy: true,
     };
@@ -606,7 +621,7 @@ function insertDummy() {
   }
   if (!db.months[m]) {
     db.months[m] = {
-      goal: '体重を1kg落とす／副業で月20時間', focus: '22時台に寝る。夜のスマホを減らす',
+      goal: '体重を1kg落とす／集中時間を月20時間', focus: '22時台に寝る。夜のスマホを減らす',
       keep: '朝のジャーナリングは毎日できた', problem: '週末に就寝が遅くなりがち', try: '金曜は21時にスマホを充電器へ', _dummy: true,
     };
   }

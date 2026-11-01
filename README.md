@@ -21,12 +21,13 @@
 {
   "schemaVersion": 1,
   "settings": { "habits": [{ "id": "h1", "name": "ジャーナリング" }] },
-  "days": { "2026-11-01": { "habits": { "h1": true }, "satisfaction": 7, "weight": 65.2, "kcal": 1850, "sideHours": 1.5, "highlight": "…" } },
+  "days": { "2026-11-01": { "habits": { "h1": true, "h2": 0.5 }, "satisfaction": 7, "weight": 65.2, "kcal": 1850, "focusHours": 1.5, "highlight": "…" } },
   "months": { "2026-11": { "goal": "…", "focus": "…", "keep": "…", "problem": "…", "try": "…" } },
   "meta": { "lastExportAt": "…" }
 }
 ```
 
+- 習慣は `true`=できた（黒塗り）、`0.5`=まぁまぁ（半分塗り）、記録なし=未達。達成率では0.5回として数える
 - 習慣はIDで記録しているので、名前を変えても過去データはそのまま。「外す」は非表示にするだけで記録は消えない
 - 設定 → 「JSONをエクスポート」でバックアップ、「インポート」で復元（置き換え）
 

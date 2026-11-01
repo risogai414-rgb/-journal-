@@ -124,8 +124,12 @@ h2 {
   flex: 0 0 22px; height: 22px; border-radius: 5px;
   border: 2px solid var(--muted);
 }
-.habit[aria-pressed=true] { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
-.habit[aria-pressed=true] .box { background: var(--ink-text); border-color: var(--ink-text); }
+.habit[data-state=full] { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+.habit[data-state=full] .box { background: var(--ink-text); border-color: var(--ink-text); }
+/* まぁまぁ：枠を濃く、チェック欄は斜め半分塗り */
+.habit[data-state=half] { border-color: var(--ink); border-width: 2px; }
+.habit[data-state=half] .box { border-color: var(--ink); background: linear-gradient(135deg, var(--ink) 50%, transparent 50%); }
+h2 .legend { font-weight: 500; letter-spacing: 0; margin-left: 8px; }
 
 /* ---------- 満足度 ---------- */
 .sat { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
@@ -201,7 +205,8 @@ table.mg { border-collapse: collapse; font-size: 13px; font-variant-numeric: tab
 .mg tr.wd-sun .d small { color: var(--sun); }
 .mg tr.wd-sat .d small { color: var(--sat); }
 .mg td.c { width: 28px; height: 28px; }
-.mg td.c.on { background: var(--ink); }
+.mg td.c.full { background: var(--ink); }
+.mg td.c.half { background: linear-gradient(135deg, var(--ink) 50%, transparent 50%); }
 .mg td.n { padding: 0 6px; min-width: 40px; }
 .mg td.hl { text-align: left; padding: 0 8px; min-width: 12em; }
 .mg tr.future td:not(.d) { opacity: .35; }
