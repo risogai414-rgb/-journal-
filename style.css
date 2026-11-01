@@ -33,6 +33,8 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* ダブルタップで拡大しないように */
+html, body, button, input, select, textarea, label, a, table { touch-action: manipulation; }
 html, body { margin: 0; }
 body {
   background-color: var(--bg);
@@ -270,3 +272,12 @@ table.mg { border-collapse: collapse; font-size: 13px; font-variant-numeric: tab
   max-width: calc(100% - 32px);
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 集中時間：数字部分をタップすると回転式で選べる（透明なselectを重ねる） */
+.pickfield select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; font-size: 16px; border: 0; -webkit-appearance: none; appearance: none;
+}
+.pickfield::after {
+  content: '▾'; position: absolute; left: 14px; font-size: 13px; color: var(--muted); pointer-events: none;
+}

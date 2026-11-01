@@ -208,7 +208,12 @@ function renderDay() {
     <h2>集中時間</h2>
     <div class="numrow">
       <button class="step" data-act="s-">−</button>
-      <div class="numfield"><output id="focus">${d.focusHours != null ? fmt1(d.focusHours) : '—'}</output><span class="unit">時間</span></div>
+      <div class="numfield pickfield"><output id="focus">${d.focusHours != null ? fmt1(d.focusHours) : '—'}</output><span class="unit">時間</span>
+        <select id="focuspick" aria-label="集中時間を選ぶ">
+          <option value="" ${d.focusHours == null ? 'selected' : ''}>— 未記入</option>
+          ${Array.from({ length: 33 }, (_, i) => i / 2).map((h) => `<option value="${h}" ${d.focusHours === h ? 'selected' : ''}>${fmt1(h)} 時間</option>`).join('')}
+        </select>
+      </div>
       <button class="step" data-act="s+">＋</button>
     </div>
 
@@ -269,11 +274,16 @@ $view.addEventListener('click', (e) => {
       if (cur == null && t.dataset.act === 's-') v = 0;
       v = Math.max(0, Math.min(24, v));
       setField(date, 'focusHours', v);
-      document.getElementById('focus').textContent = fmt1(v);
+      showFocus(v);
       break;
     }
   }
 });
+
+function showFocus(v) {
+  document.getElementById('focus').textContent = v == null ? '—' : fmt1(v);
+  document.getElementById('focuspick').value = v == null ? '' : String(v);
+}
 
 function commitWeight(v) {
   setField(state.date, 'weight', v);
@@ -300,6 +310,11 @@ $view.addEventListener('change', (e) => {
   if (state.tab === 'day' && e.target.id === 'datepick' && e.target.value) {
     state.date = e.target.value > todayStr() ? todayStr() : e.target.value;
     render();
+  }
+  if (state.tab === 'day' && e.target.id === 'focuspick') {
+    const v = e.target.value === '' ? undefined : Number(e.target.value);
+    setField(state.date, 'focusHours', v);
+    showFocus(v);
   }
   if (state.tab === 'day' && e.target.id === 'weight') {
     const v = parseFloat(e.target.value);
