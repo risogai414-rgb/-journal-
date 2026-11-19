@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="切り抜きマーカー"><style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style></head><body>
+<title>切り抜きマーカー</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: phone-first. Marker list scrolls in the middle, a thumb dock (time + keypad + 開始/終了) is pinned to the bottom. */
+:root{
+  --bg:#f3f4f7; --surface:#ffffff; --line:#dfe2ea; --fg:#1c1f27; --muted:#6b7283;
+  --in:#f08a1c; --in-soft:#fde9d3; --out:#3a6ff0; --out-soft:#dce6fd; --danger:#d64545;
+  --key:#e9ebf1; --key-press:#d6d9e2;
+  --f-ui:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN",system-ui,sans-serif;
+  --f-tc:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14161b; --surface:#1d2027; --line:#2c303a; --fg:#eceef3; --muted:#959cad;
+  --in:#ff9a33; --in-soft:#3d2a16; --out:#5b8cff; --out-soft:#1a2747; --danger:#ff6b6b;
+  --key:#272b34; --key-press:#343945; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14161b; --surface:#1d2027; --line:#2c303a; --fg:#eceef3; --muted:#959cad;
+  --in:#ff9a33; --in-soft:#3d2a16; --out:#5b8cff; --out-soft:#1a2747; --danger:#ff6b6b;
+  --key:#272b34; --key-press:#343945; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-ui);font-size:15px;line-height:1.5;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 0}
+header{display:flex;flex-direction:column;gap:6px}
+.eyebrow{font-size:12px;letter-spacing:.08em;color:var(--muted)}
+#title{font:700 20px/1.3 var(--f-ui);color:var(--fg);background:transparent;border:0;border-bottom:1px dashed var(--line);padding:4px 0;width:100%}
+#title:focus{outline:none;border-bottom-color:var(--out)}
+.summary{display:flex;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+.summary b{color:var(--fg);font-family:var(--f-tc)}
+.sync{margin-left:auto}
+.urltop{margin-top:10px;display:flex;gap:8px}.urltop input{flex:1;min-width:0;font:500 16px var(--f-ui);padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.player{margin-top:10px;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:16/9;max-width:100%}
+.player iframe{width:100%;height:100%;border:0;display:block}
+.notice{margin-top:10px;font-size:13px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+
+/* list */
+#list{list-style:none;margin:14px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.item{background:var(--surface);border:1px solid var(--line);border-radius:10px;display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px 12px}
+.item .dot{width:12px;height:12px;border-radius:3px;transform:rotate(45deg)}
+.item.in .dot{background:var(--in)} .item.out .dot{background:var(--out)}
+.item .main{min-width:0;display:flex;flex-direction:column}
+.item .row1{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tc{font-family:var(--f-tc);font-weight:700;font-variant-numeric:tabular-nums;font-size:17px;color:var(--fg);text-decoration:none}
+a.tc{border-bottom:1px dotted var(--muted)}
+.tag{font-size:12px;font-weight:700;padding:1px 7px;border-radius:99px}
+.in .tag{background:var(--in-soft);color:var(--in)} .out .tag{background:var(--out-soft);color:var(--out)}
+.len{font-size:12px;color:var(--muted);font-family:var(--f-tc)}
+.warn{font-size:12px;color:var(--danger)}
+.memo{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.editbtn{border:0;background:transparent;color:var(--muted);font-size:13px;padding:8px;font-family:var(--f-ui);cursor:pointer}
+.editor{grid-column:1/-1;display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.editor label{font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:3px}
+.editor input{font:500 16px var(--f-ui);padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+.editor input.tcin{font-family:var(--f-tc)}
+.editor .btns{display:flex;gap:8px;flex-wrap:wrap}
+.empty{margin-top:14px;padding:18px 16px;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font-size:14px}
+.empty ol{margin:6px 0 0;padding-left:1.3em}
+
+/* sections */
+details.sec{margin-top:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+details.sec>summary{padding:12px 14px;font-weight:700;cursor:pointer;list-style:none;display:flex;justify-content:space-between}
+details.sec>summary::after{content:"＋";color:var(--muted)}
+details.sec[open]>summary::after{content:"－"}
+.secbody{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px;font-size:14px}
+.secbody label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.secbody input,.secbody select{font:500 16px var(--f-ui);padding:9px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+.secbody .hint{font-size:12px;color:var(--muted);margin:0}
+.secbody textarea{width:100%;min-height:140px;font:500 13px/1.6 var(--f-tc);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.radio{display:flex;flex-direction:column;gap:6px}
+.radio label{flex-direction:row;align-items:flex-start;gap:8px;color:var(--fg);font-size:14px}
+.radio input{width:auto;margin-top:4px}
+.btn{font:700 14px var(--f-ui);padding:10px 14px;border-radius:9px;border:1px solid var(--line);background:var(--key);color:var(--fg);cursor:pointer}
+.btn.primary{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+.btn.danger{color:var(--danger)}
+.btn:focus-visible,.key:focus-visible,.big:focus-visible{outline:2px solid var(--out);outline-offset:2px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px}
+kbd{font-family:var(--f-tc);font-size:12px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px}
+
+/* dock */
+.spacer{height:calc(var(--dock-h,330px) + 16px)}
+.dock{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);
+  padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));padding-top:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:5}
+.dock-in{max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.timebar{display:flex;align-items:center;gap:10px}
+#tdisp{font:700 34px/1 var(--f-tc);font-variant-numeric:tabular-nums;letter-spacing:.02em;flex:1;min-width:0}
+#tdisp .dim{color:var(--muted);opacity:.45}
+#tdisp.bad{color:var(--danger)}
+.tlabel{font-size:12px;color:var(--muted);text-align:right;line-height:1.3}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.key{font:700 20px var(--f-tc);height:46px;border:0;border-radius:9px;background:var(--key);color:var(--fg);cursor:pointer;touch-action:manipulation}
+.key.fn{font:700 14px var(--f-ui);color:var(--muted)}
+.key:active{background:var(--key-press)}
+.bigs{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.big{height:64px;border-radius:12px;border:2px solid transparent;font:700 20px var(--f-ui);cursor:pointer;touch-action:manipulation;display:flex;align-items:center;justify-content:center;gap:8px}
+.big .dia{width:14px;height:14px;border-radius:3px;transform:rotate(45deg);background:#fff}
+.big.in{background:var(--in);color:#fff}
+.big.out{background:var(--out);color:#fff}
+.big.next{box-shadow:0 0 0 3px var(--bg),0 0 0 5px currentColor}
+.big.in.next{color:#fff;box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--in)}
+.big.out.next{box-shadow:0 0 0 3px var(--surface),0 0 0 5px var(--out)}
+.big:disabled{opacity:.4}
+.big:active{transform:scale(.98)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--dock-h,330px) + 12px);background:var(--fg);color:var(--bg);padding:9px 10px 9px 14px;border-radius:10px;font-size:14px;display:flex;gap:12px;align-items:center;z-index:6;width:max-content;max-width:calc(100% - 32px)}
+.toast button{white-space:nowrap;flex:none;background:transparent;border:1px solid currentColor;color:inherit;border-radius:7px;padding:4px 10px;font:700 13px var(--f-ui)}
+@media (prefers-reduced-motion: reduce){.big:active{transform:none}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">切り抜きマーカー ・ 雑談集づくり用</div>
+    <input id="title" type="text" placeholder="配信タイトル（例：ダイダロスを意地でも救う）" autocomplete="off">
+    <div class="summary">
+      <span>🟠 開始 <b id="nIn">0</b></span>
+      <span>🔵 終了 <b id="nOut">0</b></span>
+      <span>切り抜き <b id="nClip">0</b>本</span>
+      <span class="sync" id="syncState"></span>
+    </div>
+  </header>
+
+  <div id="urlTopBox" class="urltop" hidden>
+    <input id="urlTop" type="url" placeholder="配信のYouTube URLを貼り付け" autocomplete="off" autocapitalize="off" aria-label="YouTubeのURL">
+    <button class="btn primary" id="urlGo" type="button">開く</button>
+  </div>
+  <div id="playerBox" hidden>
+    <div class="player"><iframe id="yt" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="YouTube"></iframe></div>
+  </div>
+  <p class="notice" id="modeNote" hidden></p>
+
+  <ol id="list"></ol>
+  <div class="empty" id="empty">
+    <b>まだマーカーがありません。</b>
+    <ol>
+      <li>YouTubeアプリで配信を見て、切り抜きたい所で一時停止</li>
+      <li>画面に出ている時間を下のキーで入力（例：1:23:45 なら 1 2 3 4 5）</li>
+      <li>🟠開始 か 🔵終了 をタップ</li>
+    </ol>
+  </div>
+
+  <details class="sec" id="secExport">
+    <summary>Final Cut Pro に書き出す</summary>
+    <div class="secbody">
+      <div class="radio">
+        <label><input type="radio" name="mode" value="gap" checked> <span><b>マーカーだけ（おすすめ）</b><br><span class="hint">マーカー付きの空のクリップを読み込み、その上に配信まるごとを重ねます。</span></span></label>
+        <label><input type="radio" name="mode" value="clip"> <span><b>配信まるごとのクリップに付ける（試験的）</b><br><span class="hint">動画ファイルの場所を指定すると、クリップ自体にマーカーが付いた状態で読み込みます。</span></span></label>
+      </div>
+      <div id="clipOpts" hidden style="display:flex;flex-direction:column;gap:10px">
+        <label>動画ファイルの場所（Macのパス）
+          <input id="path" type="text" placeholder="/Users/…/Movies/ささぼー作業/…/clip_配信まるごと.mp4" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+        <p class="hint">Finderでファイルを右クリック → <kbd>option</kbd>を押しながら「パス名をコピー」で取れます。</p>
+        <label>動画の長さ（必須）
+          <input id="vlen" type="text" inputmode="numeric" placeholder="5:06:58" autocomplete="off">
+        </label>
+      </div>
+      <div class="btnrow">
+        <button class="btn primary" id="dlXml" type="button">FCPXMLを保存</button>
+        <button class="btn" id="dlTxt" type="button">テキストで保存</button>
+      </div>
+      <p class="hint" id="dlNote"></p>
+      <ol class="steps" id="howto"></ol>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary>テキストで見る・コピー</summary>
+    <div class="secbody">
+      <textarea id="txt" readonly></textarea>
+      <div class="btnrow"><button class="btn" id="copyTxt" type="button">コピー</button></div>
+    </div>
+  </details>
+
+  <details class="sec">
+    <summary>設定</summary>
+    <div class="secbody">
+      <label>YouTubeのURL（任意）
+        <input id="url" type="url" placeholder="https://youtube.com/live/…" autocomplete="off" autocapitalize="off">
+      </label>
+      <p class="hint" id="urlHint">入れておくと、マーカーの時間をタップしてその位置から確認できます。</p>
+      <label>FCPのプロジェクトのフレームレート
+        <select id="fps">
+          <option value="23.98">23.98</option><option value="24">24</option><option value="25">25</option>
+          <option value="29.97">29.97</option><option value="30">30</option><option value="50">50</option>
+          <option value="59.94">59.94</option><option value="60">60</option>
+        </select>
+      </label>
+      <label>ずらす秒数（YouTubeとFCPで頭がずれている時だけ）
+        <input id="offset" type="number" inputmode="decimal" step="1" value="0">
+      </label>
+      <p class="hint">FCPの方が5秒遅く始まるなら 5、早いなら -5。</p>
+      <div class="btnrow">
+        <button class="btn danger" id="resetBtn" type="button">新しい配信をはじめる（全部消す）</button>
+      </div>
+      <p class="hint" id="resetNote" hidden></p>
+    </div>
+  </details>
+  <div class="spacer"></div>
+</div>
+
+<div class="dock" id="dock">
+  <div class="dock-in">
+    <div class="timebar">
+      <div id="tdisp">0:00:00</div>
+      <div class="tlabel" id="tlabel">YouTubeの<br>再生位置を入力</div>
+    </div>
+    <div class="keys" id="keys">
+      <button class="key" data-k="1" type="button">1</button><button class="key" data-k="2" type="button">2</button><button class="key" data-k="3" type="button">3</button><button class="key fn" data-k="back" type="button" aria-label="1文字消す">⌫</button>
+      <button class="key" data-k="4" type="button">4</button><button class="key" data-k="5" type="button">5</button><button class="key" data-k="6" type="button">6</button><button class="key fn" data-k="clear" type="button">クリア</button>
+      <button class="key" data-k="7" type="button">7</button><button class="key" data-k="8" type="button">8</button><button class="key" data-k="9" type="button">9</button><button class="key" data-k="0" type="button">0</button>
+    </div>
+    <div class="bigs">
+      <button class="big in" id="bIn" type="button"><span class="dia"></span>開始</button>
+      <button class="big out" id="bOut" type="button"><span class="dia"></span>終了</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" hidden><span id="toastMsg"></span><button id="undo" type="button">取り消す</button></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const IN_ARTIFACT = !!window.claude;
+  const LS_KEY = 'clipMarker.v1';
+  const blank = () => ({title:'', url:'', fps:'50', offset:0, mode:'gap', path:'', vlen:'', markers:[], updatedAt:0});
+  let S = blank();
+  let digits = '';        // keypad buffer
+  let freshAfterRecord = false;
+  let editingId = null;
+  let lastAdded = null;
+
+  /* ---------- time helpers ---------- */
+  const fmt = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return h + ':' + String(m).padStart(2,'0') + ':' + String(x).padStart(2,'0'); };
+  const parseTC = str => { // "1:23:45" "23:45" "12345" -> seconds or null
+    str = String(str||'').trim(); if (!str) return null;
+    let parts;
+    if (str.includes(':')) parts = str.split(':').map(Number);
+    else { const d = str.replace(/\D/g,'').padStart(6,'0').slice(-6); parts = [+d.slice(0,2), +d.slice(2,4), +d.slice(4,6)]; }
+    if (parts.some(isNaN)) return null;
+    while (parts.length < 3) parts.unshift(0);
+    const [h,m,s] = parts; if (m > 59 || s > 59) return null;
+    return h*3600 + m*60 + s;
+  };
+  const digitsToSec = d => { if (!d) return 0; const p = d.padStart(6,'0'); const h=+p.slice(0,2), m=+p.slice(2,4), s=+p.slice(4,6); if (m>59||s>59) return null; return h*3600+m*60+s; };
+  const uid = () => Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
+
+  /* ---------- YouTube ---------- */
+  const ytId = u => { if (!u) return null; const m = String(u).match(/(?:youtu\.be\/|v=|\/live\/|\/shorts\/|\/embed\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : null; };
+  const ytLink = s => { const id = ytId(S.url); return id ? `https://youtu.be/${id}?t=${Math.max(0,Math.round(s))}` : null; };
+
+  // Player mode (only outside the claude.ai viewer, e.g. when hosted on its own site)
+  const P = {on:false, t:0, at:0, playing:false, id:null};
+  const playerNow = () => P.playing ? P.t + (performance.now()-P.at)/1000 : P.t;
+  function setupPlayer(){
+    const id = ytId(S.url);
+    if (!IN_ARTIFACT) { $('urlTopBox').hidden = false; $('urlTop').value = S.url || ''; }
+    if (IN_ARTIFACT || !id || location.protocol === 'file:') { P.on=false; $('playerBox').hidden = true; updateModeNote(); return; }
+    if (P.id === id) return;
+    P.id = id; P.on = false;
+    const ifr = $('yt');
+    ifr.src = `https://www.youtube.com/embed/${id}?enablejsapi=1&playsinline=1&rel=0&origin=${encodeURIComponent(location.origin)}`;
+    $('playerBox').hidden = false;
+    let tries = 0;
+    const ping = setInterval(() => {
+      if (P.on || ++tries > 20) { clearInterval(ping); if (!P.on) { $('playerBox').hidden = true; updateModeNote(true); } return; }
+      try { ifr.contentWindow.postMessage(JSON.stringify({event:'listening', id:1, channel:'widget'}), '*'); } catch(e){}
+    }, 500);
+  }
+  window.addEventListener('message', e => {
+    if (!/youtube\.com$/.test(new URL(e.origin||'http://x').hostname)) return;
+    let d; try { d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch(_) { return; }
+    if (!d || !d.event) return;
+    if (!P.on) { P.on = true; updateModeNote(); render(); }
+    const info = d.info || {};
+    if (typeof info.currentTime === 'number') { P.t = info.currentTime; P.at = performance.now(); }
+    if (typeof info.playerState === 'number') { P.playing = info.playerState === 1; }
+  });
+  function ytCmd(func, args){ try { $('yt').contentWindow.postMessage(JSON.stringify({event:'command', func, args:args||[]}), '*'); } catch(e){} }
+
+  function updateModeNote(failed){
+    const n = $('modeNote');
+    if (P.on) { n.hidden = true; $('keys').hidden = true; $('tlabel').innerHTML = '動画の<br>再生位置'; }
+    else {
+      $('keys').hidden = false; $('tlabel').innerHTML = 'YouTubeの<br>再生位置を入力';
+      if (failed) { n.hidden = false; n.textContent = 'この動画はページ内で再生できませんでした。YouTubeアプリで見て、時間を入力してください。'; }
+      else n.hidden = true;
+    }
+    measureDock();
+  }
+
+  /* ---------- storage: localStorage + db (sync between iPhone and Mac) ---------- */
+  function loadLocal(){ try { const v = JSON.parse(localStorage.getItem(LS_KEY)||'null'); if (v && Array.isArray(v.markers)) S = Object.assign(blank(), v); } catch(e){} }
+  function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch(e){} }
+  let dbRef = null, pushTimer = null, dbReady = false;
+  function setSync(t){ $('syncState').textContent = t; }
+  function commit(){ S.updatedAt = Date.now(); saveLocal(); render(); schedulePush(); }
+  function schedulePush(){ if (!dbRef) return; clearTimeout(pushTimer); setSync('保存中…'); pushTimer = setTimeout(push, 700); }
+  async function push(){ if (!dbRef) return; try { await dbRef.set(JSON.parse(JSON.stringify(S))); setSync('☁︎ 同期済み'); } catch(e){ setSync('端末内に保存'); } }
+  async function initDb(){
+    if (!IN_ARTIFACT || !window.claude.use) { setSync('端末内に保存'); return; }
+    const timer = setTimeout(() => { if (!dbReady) setSync('端末内に保存'); }, 10000);
+    try {
+      const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+      const id = user && await user.id();
+      if (!db || !id) { clearTimeout(timer); setSync('端末内に保存'); return; }
+      dbRef = db.doc('data/users/' + id + '/current');
+      dbRef.onSnapshot(snap => {
+        dbReady = true; clearTimeout(timer);
+        const remote = snap.exists ? snap.data() : null;
+        if (remote && (remote.updatedAt||0) > (S.updatedAt||0)) { S = Object.assign(blank(), remote); saveLocal(); fillForm(); render(); setSync('☁︎ 同期済み'); }
+        else if (!remote || (remote.updatedAt||0) < (S.updatedAt||0)) { if (S.updatedAt) push(); else setSync('☁︎ 同期済み'); }
+        else setSync('☁︎ 同期済み');
+      }, () => { clearTimeout(timer); setSync('端末内に保存'); });
+    } catch(e){ clearTimeout(timer); setSync('端末内に保存'); }
+  }
+
+  /* ---------- derived ---------- */
+  const sorted = () => S.markers.slice().sort((a,b) => a.t - b.t || (a.type==='in' ? -1 : 1));
+  function pairs(){ // walk in order, pair each 開始 with the next 終了
+    const out = [], info = {}; let open = null, n = 0;
+    for (const m of sorted()) {
+      if (m.type === 'in') { if (open) info[open.id] = {warn:'終了がありません'}; open = m; }
+      else { if (open) { n++; out.push({n, a:open, b:m}); info[open.id] = {n}; info[m.id] = {n, len:m.t-open.t}; open = null; } else info[m.id] = {warn:'開始がありません'}; }
+    }
+    if (open) info[open.id] = {n:null, open:true};
+    return {clips:out, info, open:!!open};
+  }
+
+  /* ---------- render ---------- */
+  function renderTime(){
+    const el = $('tdisp');
+    if (P.on) { el.textContent = fmt(playerNow()); el.classList.remove('bad'); $('bIn').disabled = $('bOut').disabled = false; return; }
+    const sec = digitsToSec(digits);
+    const p = digits.padStart(6,'0'); const disp = (+p.slice(0,2)) + ':' + p.slice(2,4) + ':' + p.slice(4,6);
+    // dim the leading zeros that haven't been typed
+    const typed = digits.length; const chars = disp.split(''); let digitIdx = 0; const totalDigits = disp.replace(/\D/g,'').length;
+    el.innerHTML = chars.map(c => { if (c === ':') return '<span class="dim">:</span>'; const fromEnd = totalDigits - (digitIdx++); return fromEnd <= typed ? c : `<span class="dim">${c}</span>`; }).join('');
+    el.classList.toggle('bad', sec === null);
+    $('bIn').disabled = $('bOut').disabled = sec === null || (!digits && !freshAfterRecord);
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function render(){
+    const list = $('list'); const ms = sorted(); const {clips, info, open} = pairs();
+    $('nIn').textContent = S.markers.filter(m=>m.type==='in').length;
+    $('nOut').textContent = S.markers.filter(m=>m.type==='out').length;
+    $('nClip').textContent = clips.length;
+    $('empty').hidden = ms.length > 0;
+    $('bIn').classList.toggle('next', !open); $('bOut').classList.toggle('next', open);
+    list.innerHTML = ms.map(m => {
+      const i = info[m.id] || {}; const link = P.on ? '#' : ytLink(m.t);
+      const tcHtml = link ? `<a class="tc" href="${link}" ${P.on ? `data-seek="${m.t}"` : 'target="_blank" rel="noopener"'}>${fmt(m.t)}</a>` : `<span class="tc">${fmt(m.t)}</span>`;
+      const extra = i.warn ? `<span class="warn">${i.warn}</span>` : (m.type==='out' && i.len!=null ? `<span class="len">${fmt(i.len).replace(/^0:/,'')}</span>` : '');
+      const label = (m.type==='in' ? '開始' : '終了') + (i.n ? ' #' + i.n : '');
+      const ed = editingId === m.id ? `
+        <div class="editor">
+          <label>時間<input class="tcin" id="e_t" type="text" inputmode="numeric" value="${fmt(m.t)}"></label>
+          <label>メモ<input id="e_m" type="text" value="${esc(m.memo||'')}" placeholder="例：お母ちゃんの話"></label>
+          <div class="btns">
+            <button class="btn primary" data-act="save" data-id="${m.id}" type="button">保存</button>
+            <button class="btn" data-act="flip" data-id="${m.id}" type="button">${m.type==='in' ? '終了に変える' : '開始に変える'}</button>
+            <button class="btn danger" data-act="del" data-id="${m.id}" type="button">削除</button>
+          </div>
+        </div>` : '';
+      return `<li class="item ${m.type}" data-id="${m.id}">
+        <span class="dot" aria-hidden="true"></span>
+        <div class="main"><div class="row1">${tcHtml}<span class="tag">${label}</span>${extra}</div>${m.memo ? `<div class="memo">${esc(m.memo)}</div>` : ''}</div>
+        <button class="editbtn" data-act="edit" data-id="${m.id}" type="button">${editingId===m.id ? '閉じる' : (m.memo ? '編集' : 'メモ')}</button>
+        ${ed}</li>`;
+    }).join('');
+    $('txt').value = textExport();
+    renderTime();
+    renderHowto();
+  }
+
+  /* ---------- actions ---------- */
+  function record(type){
+    let t;
+    if (P.on) t = Math.floor(playerNow());
+    else { t = digitsToSec(digits); if (t === null) return; }
+    const m = {id:uid(), t, type, memo:'', created:Date.now()};
+    S.markers.push(m); lastAdded = m.id; freshAfterRecord = true;
+    commit();
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch(e){}
+    showToast(`${fmt(t)} を${type==='in'?'開始':'終了'}で記録`);
+  }
+  let toastTimer;
+  function showToast(msg){ $('toastMsg').textContent = msg; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4000); }
+  $('undo').onclick = () => { if (lastAdded) { S.markers = S.markers.filter(m => m.id !== lastAdded); lastAdded = null; commit(); } $('toast').hidden = true; };
+  $('bIn').onclick = () => record('in');
+  $('bOut').onclick = () => record('out');
+  $('keys').addEventListener('click', e => {
+    const k = e.target.closest('.key'); if (!k) return; const v = k.dataset.k;
+    if (v === 'back') digits = digits.slice(0,-1);
+    else if (v === 'clear') digits = '';
+    else { if (freshAfterRecord) { digits = ''; } if (digits.length < 6 && !(digits === '' && v === '0')) digits += v; }
+    freshAfterRecord = false;
+    renderTime();
+  });
+  $('list').addEventListener('click', e => {
+    const seek = e.target.closest('[data-seek]');
+    if (seek) { e.preventDefault(); ytCmd('seekTo', [+seek.dataset.seek, true]); ytCmd('playVideo'); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const id = b.dataset.id, m = S.markers.find(x => x.id === id); if (!m) return;
+    const act = b.dataset.act;
+    if (act === 'edit') { editingId = editingId === id ? null : id; render(); if (editingId) setTimeout(() => $('e_m') && $('e_m').focus(), 30); }
+    else if (act === 'save') { const t = parseTC($('e_t').value); if (t === null) { $('e_t').style.borderColor = 'var(--danger)'; return; } m.t = t; m.memo = $('e_m').value.trim(); editingId = null; commit(); }
+    else if (act === 'flip') { m.type = m.type === 'in' ? 'out' : 'in'; commit(); }
+    else if (act === 'del') {
+      if (b.dataset.confirm) { S.markers = S.markers.filter(x => x.id !== id); editingId = null; commit(); }
+      else { b.dataset.confirm = '1'; b.textContent = 'もう一度押すと削除'; }
+    }
+  });
+  $('list').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.target.id === 'e_m' || e.target.id === 'e_t')) { const s = e.target.closest('.item').querySelector('[data-act="save"]'); s && s.click(); } });
+
+  // header + settings fields
+  function fillForm(){
+    $('title').value = S.title||''; $('url').value = S.url||''; $('fps').value = S.fps||'50'; $('offset').value = S.offset||0;
+    $('path').value = S.path||''; $('vlen').value = S.vlen||'';
+    document.querySelectorAll('input[name=mode]').forEach(r => r.checked = r.value === (S.mode||'gap'));
+    $('clipOpts').hidden = S.mode !== 'clip';
+    setupPlayer();
+  }
+  const bind = (id, key, conv, ev='change') => $(id).addEventListener(ev, () => { S[key] = conv ? conv($(id).value) : $(id).value; commit(); });
+  bind('title','title',null,'input'); bind('fps','fps'); bind('offset','offset', v => +v||0);
+  bind('path','path', v => v.trim(), 'input'); bind('vlen','vlen', null, 'input');
+  $('urlGo').addEventListener('click', () => { const v = $('urlTop').value.trim(); if (!ytId(v)) { $('urlTop').style.borderColor = 'var(--danger)'; return; } $('urlTop').style.borderColor = ''; S.url = v; $('url').value = v; P.id = null; commit(); setupPlayer(); });
+  $('url').addEventListener('change', () => { S.url = $('url').value.trim(); P.id = null; commit(); setupPlayer(); });
+  document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => { S.mode = r.value; $('clipOpts').hidden = S.mode !== 'clip'; commit(); }));
+  $('resetBtn').addEventListener('click', () => {
+    const b = $('resetBtn');
+    if (b.dataset.confirm) { const keep = {fps:S.fps, offset:S.offset}; S = Object.assign(blank(), keep); digits=''; P.id=null; commit(); fillForm(); b.dataset.confirm=''; b.textContent='新しい配信をはじめる（全部消す）'; $('resetNote').hidden = true; }
+    else { b.dataset.confirm = '1'; b.textContent = 'もう一度押すと全部消します'; $('resetNote').hidden = false; $('resetNote').textContent = '消す前にFCPXMLかテキストで保存しておくと安心です。'; }
+  });
+
+  /* ---------- exports ---------- */
+  function textExport(){
+    const {clips} = pairs(); const lines = [];
+    lines.push((S.title || '配信') + ' 切り抜きマーカー'); if (S.url) lines.push(S.url); lines.push('');
+    lines.push('■ 切り抜き'); if (!clips.length) lines.push('（まだありません）');
+    clips.forEach(c => lines.push(`#${c.n}  ${fmt(c.a.t)} → ${fmt(c.b.t)}  (${fmt(c.b.t-c.a.t).replace(/^0:/,'')})  ${[c.a.memo,c.b.memo].filter(Boolean).join(' / ')}`.trimEnd()));
+    lines.push(''); lines.push('■ マーカー一覧');
+    sorted().forEach(m => lines.push(`${fmt(m.t)}  ${m.type==='in'?'開始':'終了'}  ${m.memo||''}`.trimEnd()));
+    return lines.join('\n');
+  }
+  const FPS = {
+    '23.98':{n:1001,d:24000,name:'2398'}, '24':{n:100,d:2400,name:'24'}, '25':{n:100,d:2500,name:'25'},
+    '29.97':{n:1001,d:30000,name:'2997'}, '30':{n:100,d:3000,name:'30'}, '50':{n:100,d:5000,name:'50'},
+    '59.94':{n:1001,d:60000,name:'5994'}, '60':{n:100,d:6000,name:'60'}
+  };
+  const xesc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function buildFcpxml(){
+    const f = FPS[S.fps] || FPS['50']; const fpsVal = f.d / f.n;
+    const R = sec => { const fr = Math.max(0, Math.round(sec * fpsVal)); return fr === 0 ? '0s' : `${fr*f.n}/${f.d}s`; };
+    const one = `${f.n}/${f.d}s`;
+    const {info} = pairs(); const off = +S.offset || 0;
+    const ms = sorted().map(m => ({...m, at: m.t + off})).filter(m => m.at >= 0);
+    const lastT = ms.length ? ms[ms.length-1].at : 0;
+    let len = parseTC(S.vlen);
+    if (S.mode !== 'clip' || !len) len = Math.max(len || 0, lastT + 60);
+    const dur = R(len);
+    const name = (S.title || '配信') ;
+    const markersXml = ms.map(m => {
+      const i = info[m.id] || {}; const label = (m.type==='in' ? '開始' : '終了') + (i.n ? ' #' + i.n : '') + (m.memo ? ' ' + m.memo : '');
+      return m.type === 'in'
+        ? `            <chapter-marker start="${R(m.at)}" duration="${one}" value="${xesc(label)}" posterOffset="0s"/>`
+        : `            <marker start="${R(m.at)}" duration="${one}" value="${xesc(label)}"/>`;
+    }).join('\n');
+    const fmtRes = `<format id="r1" name="FFVideoFormat1080p${f.name}" frameDuration="${one}" width="1920" height="1080" colorSpace="1-1-1 (Rec. 709)"/>`;
+    let resources = fmtRes, spine;
+    if (S.mode === 'clip' && S.path) {
+      const src = 'file://' + S.path.split('/').map(encodeURIComponent).join('/');
+      const fileName = S.path.split('/').pop().replace(/\.[^.]+$/, '');
+      resources += `\n    <asset id="r2" name="${xesc(fileName)}" start="0s" duration="${dur}" hasVideo="1" format="r1" videoSources="1" hasAudio="1" audioSources="1" audioChannels="2" audioRate="48000">\n      <media-rep kind="original-media" src="${xesc(src)}"/>\n    </asset>`;
+      spine = `          <asset-clip ref="r2" offset="0s" name="${xesc(fileName)}" start="0s" duration="${dur}" format="r1" tcFormat="NDF" audioRole="dialogue">\n${markersXml}\n          </asset-clip>`;
+    } else {
+      spine = `          <gap name="切り抜きマーカー" offset="0s" start="0s" duration="${dur}">\n${markersXml}\n          </gap>`;
+    }
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE fcpxml>
+<fcpxml version="1.10">
+  <resources>
+    ${resources}
+  </resources>
+  <event name="切り抜きマーカー">
+    <project name="${xesc(name)} マーカー">
+      <sequence format="r1" duration="${dur}" tcStart="0s" tcFormat="NDF" audioLayout="stereo" audioRate="48k">
+        <spine>
+${spine}
+        </spine>
+      </sequence>
+    </project>
+  </event>
+</fcpxml>
+`;
+  }
+  // minimal ZIP (stored, UTF-8 names): the viewer only lets pages save certain file types, .fcpxml is not one of them
+  const CRC = (() => { const t = new Uint32Array(256); for (let n=0;n<256;n++){ let c=n; for (let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+  const crc32 = b => { let c = 0xFFFFFFFF; for (let i=0;i<b.length;i++) c = CRC[(c^b[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; };
+  function zip(name, text){
+    const enc = new TextEncoder(); const nb = enc.encode(name), db = enc.encode(text), crc = crc32(db);
+    const d = new Date(); const time = (d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1); const date = ((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+    const lh = new DataView(new ArrayBuffer(30)); [[0,0x04034b50,4],[4,20,2],[6,0x0800,2],[8,0,2],[10,time,2],[12,date,2],[14,crc,4],[18,db.length,4],[22,db.length,4],[26,nb.length,2],[28,0,2]].forEach(([o,v,s]) => s===4 ? lh.setUint32(o,v,true) : lh.setUint16(o,v,true));
+    const ch = new DataView(new ArrayBuffer(46)); [[0,0x02014b50,4],[4,20,2],[6,20,2],[8,0x0800,2],[10,0,2],[12,time,2],[14,date,2],[16,crc,4],[20,db.length,4],[24,db.length,4],[28,nb.length,2],[30,0,2],[32,0,2],[34,0,2],[36,0,2],[38,0,4],[42,0,4]].forEach(([o,v,s]) => s===4 ? ch.setUint32(o,v,true) : ch.setUint16(o,v,true));
+    const cdOff = 30 + nb.length + db.length, cdLen = 46 + nb.length;
+    const eo = new DataView(new ArrayBuffer(22)); [[0,0x06054b50,4],[4,0,2],[6,0,2],[8,1,2],[10,1,2],[12,cdLen,4],[16,cdOff,4],[20,0,2]].forEach(([o,v,s]) => s===4 ? eo.setUint32(o,v,true) : eo.setUint16(o,v,true));
+    return new Blob([lh, nb, db, ch, nb, eo], {type:'application/zip'});
+  }
+  const safeName = () => ((S.title || '配信').replace(/[\\/:*?"<>|]/g,'').slice(0,40) || '配信') + '_マーカー';
+  async function save(filename, data, mime){
+    const note = $('dlNote');
+    if (IN_ARTIFACT) {
+      const dl = window.claude.use ? await window.claude.use('downloads') : null;
+      if (!dl) { note.textContent = 'この画面では保存できません。下の「テキストで見る・コピー」を使ってください。'; return; }
+      try { await dl.save({filename, data}); note.textContent = `${filename} を保存しました。`; }
+      catch(e){ note.textContent = e && e.code === 'declined' ? '保存をキャンセルしました。' : '保存できませんでした。もう一度試してください。'; }
+    } else {
+      const blob = data instanceof Blob ? data : new Blob([data], {type:mime});
+      // iPhone: share sheet so the file can go straight to the Mac by AirDrop
+      try {
+        const file = new File([blob], filename, {type: mime || blob.type || 'application/octet-stream'});
+        if (/iPhone|iPad|Android/.test(navigator.userAgent) && navigator.canShare && navigator.canShare({files:[file]})) {
+          await navigator.share({files:[file]}); note.textContent = `${filename} を送りました。`; return;
+        }
+      } catch(e){ if (e && e.name === 'AbortError') { note.textContent = 'キャンセルしました。'; return; } }
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000); note.textContent = `${filename} を保存しました。`;
+    }
+  }
+  $('dlXml').onclick = () => {
+    if (!S.markers.length) { $('dlNote').textContent = 'マーカーがまだありません。'; return; }
+    if (S.mode === 'clip' && (!S.path || !parseTC(S.vlen))) { $('dlNote').textContent = '動画ファイルの場所と長さを入れてください。'; return; }
+    const xml = buildFcpxml(); const base = safeName();
+    if (IN_ARTIFACT) save(base + '.zip', zip(base + '.fcpxml', xml));
+    else save(base + '.fcpxml', xml, 'application/xml');
+  };
+  $('dlTxt').onclick = () => save(safeName() + '.txt', textExport(), 'text/plain');
+  $('copyTxt').onclick = async () => {
+    const ta = $('txt');
+    try { await navigator.clipboard.writeText(ta.value); $('copyTxt').textContent = 'コピーしました'; }
+    catch(e){ ta.focus(); ta.select(); $('copyTxt').textContent = '選択しました。コピーしてください'; }
+    setTimeout(() => $('copyTxt').textContent = 'コピー', 2500);
+  };
+  function renderHowto(){
+    const zipStep = IN_ARTIFACT ? '<li>保存したzipをMacでダブルクリック（iPhoneで保存したらAirDropでMacへ）。.fcpxml が出てきます</li>' : '<li>iPhoneでは共有メニューが出るので、AirDropでMacに送る</li>';
+    const steps = S.mode === 'clip'
+      ? `${zipStep}<li>FCPで <b>ファイル → 読み込む → XML…</b> から .fcpxml を選ぶ</li><li>「切り抜きマーカー」イベントに、マーカー付きの配信まるごとクリップが入ったプロジェクトができます</li><li>いつも通り、マーカーの位置で切り抜き</li>`
+      : `${zipStep}<li>FCPで <b>ファイル → 読み込む → XML…</b> から .fcpxml を選ぶ</li><li>「切り抜きマーカー」イベントにできたプロジェクトを開く（灰色の空クリップにマーカーが付いています）</li><li>再生ヘッドを先頭 <kbd>Home</kbd> に置き、ブラウザで配信まるごとを選んで <kbd>Q</kbd>（上につなげる）</li><li>マーカー間の移動は <kbd>control</kbd>+<kbd>'</kbd>／<kbd>control</kbd>+<kbd>;</kbd>、切るのは <kbd>⌘B</kbd></li>`;
+    $('howto').innerHTML = steps;
+  }
+
+  /* ---------- layout ---------- */
+  function measureDock(){ const h = $('dock').offsetHeight; document.documentElement.style.setProperty('--dock-h', h + 'px'); }
+  window.addEventListener('resize', measureDock);
+  // physical keyboard support (Mac)
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input,textarea,select')) return;
+    if (/^[0-9]$/.test(e.key) && !P.on) { const k = document.querySelector(`.key[data-k="${e.key}"]`); k && k.click(); }
+    else if (e.key === 'Backspace' && !P.on) document.querySelector('.key[data-k="back"]').click();
+    else if (e.key === 'i' || e.key === 'I') $('bIn').click();
+    else if (e.key === 'o' || e.key === 'O') $('bOut').click();
+  });
+  setInterval(() => { if (P.on) renderTime(); }, 250);
+  try { navigator.wakeLock && document.addEventListener('click', () => navigator.wakeLock.request('screen').catch(()=>{}), {once:true}); } catch(e){}
+
+  loadLocal(); fillForm(); render(); measureDock(); updateModeNote(); initDb();
+})();
+</script>
+
+</body></html>
