@@ -7,6 +7,7 @@
  *   days:   { "YYYY-MM-DD": { habits: { [habitId]: true | 0.5 }, satisfaction, weight, kcal, focusHours, highlight } },
  *   ※ 習慣は true=できた（黒塗り）, 0.5=まぁまぁ（半分塗り）, なし=未達
  *   months: { "YYYY-MM":    { goal, focus, keep, problem, try } },
+ *   years:  { "YYYY":       { theme, goals, wish } },  ※ 年間目標
  *   meta:   { lastExportAt }
  * }
  */
@@ -40,6 +41,7 @@ function freshData() {
     settings: { habits: DEFAULT_HABITS.map((name, i) => ({ id: 'h' + (i + 1), name })) },
     days: {},
     months: {},
+    years: {},
     meta: {},
   };
 }
@@ -58,6 +60,7 @@ function normalize(d) {
     settings: { habits: d.settings.habits.filter((h) => h && h.id && typeof h.name === 'string') },
     days: d.days,
     months: d.months || {},
+    years: d.years && typeof d.years === 'object' ? d.years : {},
     meta: d.meta || {},
   };
 }
@@ -325,6 +328,65 @@ $view.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.matches('input.textfield, #kcal, #weight')) e.target.blur();
 });
 
+/* ================= 年月バー（月間・目標メモ共通） ================= */
+// タイトルをタップ → 年と月をくるくる回して選べる（iPhoneの回転式ピッカー）
+// バーを左右にスワイプ → 前後の月へ
+function monthBar(m) {
+  return `
+    <div class="monthbar" id="monthbar">
+      <button class="navbtn" data-act="mprev" aria-label="前の月">◀</button>
+      <label class="title">
+        ${monthLabel(m)}
+        <small>${m === ym(todayStr()) ? '今月' : 'タップで年月を選ぶ'}</small>
+        <input type="month" id="monthpick" value="${m}" aria-label="年月を選ぶ">
+      </label>
+      <button class="navbtn" data-act="mnext" aria-label="次の月">▶</button>
+    </div>
+    ${m === ym(todayStr()) ? '' : '<button class="backtoday" data-act="thismonth">今月に戻る</button>'}`;
+}
+const onMonthTab = () => state.tab === 'month' || state.tab === 'memo';
+function goMonth(m) {
+  if (!/^\d{4}-\d{2}$/.test(m) || m === state.month) return;
+  state.month = m;
+  render();
+}
+$view.addEventListener('click', (e) => {
+  if (!onMonthTab()) return;
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.act === 'mprev') goMonth(addMonths(state.month, -1));
+  if (b.dataset.act === 'mnext') goMonth(addMonths(state.month, 1));
+  if (b.dataset.act === 'thismonth') goMonth(ym(todayStr()));
+});
+$view.addEventListener('change', (e) => {
+  if (onMonthTab() && e.target.id === 'monthpick' && e.target.value) goMonth(e.target.value);
+});
+// 左右スワイプで月を移動（表の横スクロールや文字入力の邪魔はしない）
+let swipe = null;
+$view.addEventListener('touchstart', (e) => {
+  swipe = null;
+  if (!onMonthTab() || e.touches.length !== 1) return;
+  if (e.target.closest('.gridwrap, textarea, input:not(#monthpick)')) return;
+  swipe = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+}, { passive: true });
+$view.addEventListener('touchend', (e) => {
+  if (!swipe) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipe.x, dy = t.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) goMonth(addMonths(state.month, dx < 0 ? 1 : -1));
+}, { passive: true });
+// パソコンではバーの上でホイールを回すと月が動く
+let wheelAt = 0;
+$view.addEventListener('wheel', (e) => {
+  if (!onMonthTab() || !e.target.closest('#monthbar')) return;
+  e.preventDefault();
+  const now = Date.now();
+  if (now - wheelAt < 180 || Math.abs(e.deltaY) < 4) return;
+  wheelAt = now;
+  goMonth(addMonths(state.month, e.deltaY > 0 ? 1 : -1));
+}, { passive: false });
+
 /* ================= 月間ビュー ================= */
 function monthStats(m) {
   const habits = activeHabits();
@@ -381,11 +443,7 @@ function renderMonth() {
   }
 
   $view.innerHTML = `
-    <div class="monthbar">
-      <button class="navbtn" data-act="mprev" aria-label="前の月">◀</button>
-      <div class="title">${monthLabel(m)}</div>
-      <button class="navbtn" data-act="mnext" aria-label="次の月">▶</button>
-    </div>
+    ${monthBar(m)}
     <div class="stats">
       <div class="stat"><div class="k">習慣達成率</div><div class="v">${s.rate ?? '—'}<small>${s.rate != null ? '%' : ''}</small></div></div>
       <div class="stat"><div class="k">体重の増減${s.weightDiff != null ? `（${fmt1(s.weightFirst)}→${fmt1(s.weightLast)}）` : ''}</div><div class="v">${s.weightDiff != null ? sign(s.weightDiff) : '—'}<small>${s.weightDiff != null ? 'kg' : ''}</small></div></div>
@@ -409,6 +467,14 @@ function renderMonth() {
     </div>
     <p class="gridnote">■できた ◩まぁまぁ（達成率では0.5回）。行をタップするとその日の入力画面を開きます。右へスクロールで数値とハイライト。</p>
 
+    <h2>${yearOf(m)}年の目標</h2>
+    <div class="memoview card" data-act="editmemo">
+      ${YEAR_FIELDS.some(([k]) => (db.years[yearOf(m)] || {})[k])
+        ? YEAR_FIELDS.filter(([k]) => (db.years[yearOf(m)] || {})[k]).map(([k, label]) => `
+          <div class="mv-item"><div class="mv-k">${label}</div><div class="mv-v">${esc(db.years[yearOf(m)][k])}</div></div>`).join('')
+        : '<div class="mv-empty">まだ書かれていません。タップして書く</div>'}
+    </div>
+
     <h2>月次メモ</h2>
     <div class="memoview card" data-act="editmemo">
       ${MEMO_FIELDS.some(([k]) => (db.months[m] || {})[k])
@@ -421,9 +487,7 @@ function renderMonth() {
 
 $view.addEventListener('click', (e) => {
   if (state.tab !== 'month') return;
-  const b = e.target.closest('button');
-  if (b && b.dataset.act === 'mprev') { state.month = addMonths(state.month, -1); render(); return; }
-  if (b && b.dataset.act === 'mnext') { state.month = addMonths(state.month, 1); render(); return; }
+  if (e.target.closest('#monthbar, .backtoday')) return;
   if (e.target.closest('[data-act="editmemo"]')) { setTab('memo'); return; }
   const tr = e.target.closest('tr[data-date]');
   if (tr && tr.dataset.date <= todayStr()) { state.date = tr.dataset.date; setTab('day'); }
@@ -437,15 +501,26 @@ const MEMO_FIELDS = [
   ['problem', 'Problem（課題）', 'kpt-p'],
   ['try', 'Try（次に試すこと）', 'kpt-t'],
 ];
+const YEAR_FIELDS = [
+  ['theme', '今年のテーマ（ひとこと）'],
+  ['goals', '年間目標'],
+  ['wish', 'やりたいこと・なりたい姿'],
+];
+const yearOf = (m) => m.slice(0, 4);
 function renderMemo() {
   const m = state.month;
   const memo = db.months[m] || {};
+  const y = yearOf(m);
+  const yr = db.years[y] || {};
   $view.innerHTML = `
-    <div class="monthbar">
-      <button class="navbtn" data-act="mprev" aria-label="前の月">◀</button>
-      <div class="title">${monthLabel(m)}</div>
-      <button class="navbtn" data-act="mnext" aria-label="次の月">▶</button>
+    ${monthBar(m)}
+    <h2 class="yearhead">${y}年の目標</h2>
+    <div class="memo yearmemo">
+      ${YEAR_FIELDS.map(([k, label]) => `
+        <label for="year-${k}">${label}</label>
+        <textarea id="year-${k}" data-year="${k}" rows="${k === 'theme' ? 1 : 4}">${esc(yr[k])}</textarea>`).join('')}
     </div>
+    <h2>${monthLabel(m)}のメモ</h2>
     <div class="memo">
       ${MEMO_FIELDS.map(([k, label, cls]) => `
         <label for="memo-${k}" class="${cls}">${label}</label>
@@ -454,12 +529,14 @@ function renderMemo() {
     <p class="note">入力すると自動で保存されます。</p>
   `;
 }
-$view.addEventListener('click', (e) => {
-  if (state.tab !== 'memo') return;
-  const b = e.target.closest('button');
-  if (!b) return;
-  if (b.dataset.act === 'mprev') { state.month = addMonths(state.month, -1); render(); }
-  if (b.dataset.act === 'mnext') { state.month = addMonths(state.month, 1); render(); }
+$view.addEventListener('input', (e) => {
+  if (state.tab !== 'memo' || !e.target.dataset.year) return;
+  const y = yearOf(state.month);
+  const yr = db.years[y] || (db.years[y] = {});
+  const k = e.target.dataset.year;
+  if (e.target.value.trim() === '') delete yr[k]; else yr[k] = e.target.value;
+  if (Object.keys(yr).length === 0) delete db.years[y];
+  save();
 });
 $view.addEventListener('input', (e) => {
   if (state.tab !== 'memo' || !e.target.dataset.memo) return;
