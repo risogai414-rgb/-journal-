@@ -176,7 +176,15 @@ h2 .legend { font-weight: 500; letter-spacing: 0; margin-left: 8px; }
 
 /* ---------- 月ナビ ---------- */
 .monthbar { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; align-items: center; padding: 8px 0; }
-.monthbar .title { text-align: center; font-size: 20px; font-weight: 700; }
+.monthbar .title { position: relative; text-align: center; font-size: 20px; font-weight: 700; touch-action: pan-y; }
+.monthbar .title small { display: block; font-size: 12px; font-weight: 500; color: var(--muted); }
+.monthbar .title input[type=month] {
+  position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px;
+  border: 0; -webkit-appearance: none; appearance: none;
+}
+.memo + h2, .yearhead { margin-top: 26px; }
+.yearmemo label:first-child { margin-top: 6px; }
+.memo textarea#year-theme { min-height: 0; height: 52px; }
 
 /* ---------- サマリー ---------- */
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
